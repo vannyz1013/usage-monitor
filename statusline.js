@@ -12,7 +12,7 @@ process.stdin.on('end', () => {
 
   saveClaudeLimits(data.rate_limits);
   const model = data.model && data.model.display_name ? `[${data.model.display_name}] ` : '';
-  const claude = formatUsage('Claude', readClaudeUsage(data.rate_limits));
+  const claude = formatUsage('Claude', readClaudeUsage());
   const codex = formatUsage('Codex', readCodexUsage());
   process.stdout.write(`${model}${claude}  |  ${codex}`);
 });
