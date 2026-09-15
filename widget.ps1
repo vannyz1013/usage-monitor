@@ -40,11 +40,14 @@ $accent = [Drawing.Color]::FromArgb(110, 175, 235)   # soft blue: bar fill, trim
 $warn   = [Drawing.Color]::FromArgb(235, 135, 50)
 $danger = [Drawing.Color]::FromArgb(210, 30, 60)
 $ink    = [Drawing.Color]::FromArgb(30, 70, 115)     # navy text
-$muted  = [Drawing.Color]::FromArgb(100, 135, 170)
+$muted  = [Drawing.Color]::FromArgb(100, 135, 170)   # out-of-date numbers only
+$labelInk = [Drawing.Color]::FromArgb(55, 90, 130)   # 5h / 7d / mo and reset times: darker, readable on the light blue
 $wing   = [Drawing.Color]::FromArgb(160, 210, 250)   # butterfly wings
 $wing2  = [Drawing.Color]::FromArgb(70, 145, 215)
 
-$fBold  = New-Object Drawing.Font('Segoe UI Semibold', 9)
+# Font sizes, biggest first: product names (Claude, Codex, Spotify) > Renews / Ends ($fPlan, lib\plan-status.ps1)
+# > percentages ($fText) > 5h / 7d / mo labels and reset times ($fSmall).
+$fName  = New-Object Drawing.Font('Segoe UI Semibold', 10)
 $fText  = New-Object Drawing.Font('Segoe UI', 9)
 $fSmall = New-Object Drawing.Font('Segoe UI', 7.5)
 
@@ -131,7 +134,7 @@ function Short-Reset($resetsAt, $weekly) {
 # "5h ▬▬▬ 41% ↻4h09" — returns the x after it.
 # $stale: numbers are last-known from local logs, not live — drawn grey with a "?" so they can't pass for live.
 function Draw-Window($g, $x, $y, $label, $win, $weekly, $stale) {
-  $g.DrawString($label, $fSmall, (Brush $muted), $x, (TextY $g $fSmall $y))
+  $g.DrawString($label, $fSmall, (Brush $labelInk), $x, (TextY $g $fSmall $y))
   $x += (TextW $g $label $fSmall)
   $barY = [int]($y + $script:rowH / 2) - 3
   $g.FillRectangle((Brush $track), $x, $barY, 40, 6)
@@ -146,12 +149,18 @@ function Draw-Window($g, $x, $y, $label, $win, $weekly, $stale) {
   $x += (TextW $g '100%?' $fText)
   # Fixed slot sized for the widest label, so the bar doesn't jiggle as the countdown changes.
   $widest = if ($weekly) { '↻Wed 12:59PM' } else { '↻12:59PM' }
-  if ($win) { $g.DrawString((Short-Reset $win.resetsAt $weekly), $fSmall, (Brush $muted), $x, (TextY $g $fSmall $y)) }
+  if ($win) { $g.DrawString((Short-Reset $win.resetsAt $weekly), $fSmall, (Brush $labelInk), $x, (TextY $g $fSmall $y)) }
   return $x + (TextW $g $widest $fSmall) + 8
 }
 
 # The billing-month row (mo): Month-*, Draw-Month, Draw-MonthRing.
 . (Join-Path $PSScriptRoot 'lib\month.ps1')
+# Green Renews / red Ends label for every plan: Plan-Label, Plan-Color.
+. (Join-Path $PSScriptRoot 'lib\plan-status.ps1')
+# The Spotify line: Draw-Spotify, Spotify-Height, Spotify-Width.
+. (Join-Path $PSScriptRoot 'lib\spotify.ps1')
+# Which products this PC has (not everyone uses Claude, Codex and Spotify): Get-Sections, Has-MonthRow.
+. (Join-Path $PSScriptRoot 'lib\products.ps1')
 
 $centre = New-Object Drawing.StringFormat
 $centre.Alignment = 'Center'
@@ -161,6 +170,7 @@ function Draw-Centered($g, $s, $f, $color, $x, $y, $w, $h) {
 }
 
 # Square layout gauge: a ring filling clockwise from the top, % inside, reset clock time below.
+# Cells are 96 px wide so a 9 pt "Renews 5 Oct" under the month ring fits.
 function Draw-Ring($g, $x, $y, $w, $d, $win, $weekly, $stale) {
   $rx = $x + [int](($w - $d) / 2)
   $g.DrawEllipse((New-Object Drawing.Pen $track, 5), $rx, $y, $d, $d)
@@ -171,7 +181,7 @@ function Draw-Ring($g, $x, $y, $w, $d, $win, $weekly, $stale) {
   } else { $txt = '—' }
   $color = if ($stale) { $muted } elseif ([int]$win.pct -ge 70) { Level-Color ([int]$win.pct) } else { $ink }
   Draw-Centered $g $txt $fSmall $color $x $y $w $d
-  if ($win.resetsAt) { Draw-Centered $g (Short-Reset $win.resetsAt $weekly) $fSmall $muted $x ($y + $d + 2) $w 16 }
+  if ($win.resetsAt) { Draw-Centered $g (Short-Reset $win.resetsAt $weekly) $fSmall $labelInk $x ($y + $d + 2) $w 16 }
 }
 
 # Older than 6 min: Claude's API is only asked every 5 min, so anything past that is a missed update.
@@ -182,8 +192,8 @@ function Is-Stale($usage) {
 }
 
 function Draw-Section($g, $x, $name, $usage) {
-  $g.DrawString($name, $fBold, (Brush $ink), $x, (TextY $g $fBold))
-  $x += (TextW $g $name $fBold) + 4
+  $g.DrawString($name, $fName, (Brush $ink), $x, (TextY $g $fName))
+  $x += (TextW $g $name $fName) + 4
   $stale = Is-Stale $usage
   $x = Draw-Window $g $x 0 '5h' $usage.fiveHour $false $stale
   $x = Draw-Window $g $x 0 '7d' $usage.weekly $true $stale
@@ -203,35 +213,45 @@ $form.Add_Paint({
   Draw-Butterfly $g 16 ([int]($rh / 2) + 1)
 
   $d = $script:data
-  $sections = @()
-  if ($script:mode -ne 'codex') { $sections += , @('Claude', $d.claude, $d.month.claude) }
-  if ($script:mode -ne 'claude') { $sections += , @('Codex', $d.codex, $d.month.codex) }
+  $sections = Get-Sections $d $script:mode
   $wantH = $script:barH
 
   if ($script:collapsed) {
     $wantW = 32   # butterfly only
+  } elseif (Nothing-Found $d $sections) {
+    $wantW = 32 + (Draw-NothingFound $g 32 0 $rh) + 8 + $BTN
+    $bx = $form.ClientSize.Width - $BTN
   } elseif ($script:layout -eq 'square') {
     # Ring gauges: a column per product, a row per window (5h, 7d) plus the billing month. The panel is kept square.
-    $labelW = 20; $cellW = 76; $ringD = 44; $cellH = $ringD + 20; $nameH = 18
+    $labelW = 20; $cellW = 96; $ringD = 44; $cellH = $ringD + 20; $nameH = 20
     $gridW = $labelW + $cellW * $sections.Count
-    $side = [Math]::Max($gridW + 16, $rh + $nameH + 3 * $cellH + 8)
+    $monthRow = Has-MonthRow $sections
+    $rows = if ($sections.Count) { 2 + [int]$monthRow } else { 0 }
+    $side = [Math]::Max([Math]::Max($gridW, (Spotify-Width $g)) + 16, $rh + $nameH + $rows * $cellH + 8 + (Spotify-Height))
     $x0 = [int](($form.ClientSize.Width - $gridW) / 2)
     for ($i = 0; $i -lt $sections.Count; $i++) {
-      Draw-Centered $g $sections[$i][0] $fBold $ink ($x0 + $labelW + $i * $cellW) $rh $cellW $nameH
+      Draw-Centered $g $sections[$i][0] $fName $ink ($x0 + $labelW + $i * $cellW) $rh $cellW $nameH
     }
     $y = $rh + $nameH
-    foreach ($row in @(@('5h', 'fiveHour', $false), @('7d', 'weekly', $true))) {
-      $g.DrawString($row[0], $fSmall, (Brush $muted), $x0, (TextY $g $fSmall $y $ringD))
+    $windowRows = if ($sections.Count) { @(@('5h', 'fiveHour', $false), @('7d', 'weekly', $true)) } else { @() }
+    foreach ($row in $windowRows) {
+      $g.DrawString($row[0], $fSmall, (Brush $labelInk), $x0, (TextY $g $fSmall $y $ringD))
       for ($i = 0; $i -lt $sections.Count; $i++) {
         $usage = $sections[$i][1]
         Draw-Ring $g ($x0 + $labelW + $i * $cellW) $y $cellW $ringD $usage.($row[1]) $row[2] (Is-Stale $usage)
       }
       $y += $cellH
     }
-    $g.DrawString('mo', $fSmall, (Brush $muted), $x0, (TextY $g $fSmall $y $ringD))
-    for ($i = 0; $i -lt $sections.Count; $i++) {
-      Draw-MonthRing $g ($x0 + $labelW + $i * $cellW) $y $cellW $ringD $sections[$i][2]
+    if ($monthRow) {
+      $g.DrawString('mo', $fSmall, (Brush $labelInk), $x0, (TextY $g $fSmall $y $ringD))
+      for ($i = 0; $i -lt $sections.Count; $i++) {
+        # A product without a billing.json entry leaves its cell empty.
+        if ($sections[$i][2]) { Draw-MonthRing $g ($x0 + $labelW + $i * $cellW) $y $cellW $ringD $sections[$i][2] }
+      }
+      $y += $cellH
     }
+    $spotifyW = [Math]::Max($gridW, (Spotify-Width $g))
+    Draw-Spotify $g ([int](($form.ClientSize.Width - $spotifyW) / 2)) $y $spotifyW
     $wantW = $wantH = $side
     $bx = $form.ClientSize.Width - $BTN
   } elseif ($script:layout -eq 'vertical') {
@@ -240,14 +260,16 @@ $form.Add_Paint({
     for ($i = 0; $i -lt $sections.Count; $i++) {
       $name, $usage, $month = $sections[$i]
       if ($i) { $g.FillRectangle((Brush $accent), 10, ($y + 2), ($form.ClientSize.Width - 20), 1); $y += 5 }
-      $g.DrawString($name, $fBold, (Brush $ink), 10, (TextY $g $fBold $y 20)); $y += 20
+      $g.DrawString($name, $fName, (Brush $ink), 10, (TextY $g $fName $y 22)); $y += 22
       $stale = Is-Stale $usage
       $maxX = [Math]::Max($maxX, (Draw-Window $g 12 $y '5h' $usage.fiveHour $false $stale)); $y += $rh
       $maxX = [Math]::Max($maxX, (Draw-Window $g 12 $y '7d' $usage.weekly $true $stale)); $y += $rh
-      $maxX = [Math]::Max($maxX, (Draw-Month $g 12 $y $month)); $y += $rh
+      if ($month) { $maxX = [Math]::Max($maxX, (Draw-Month $g 12 $y $month)); $y += $rh }
     }
-    $wantW = [Math]::Max($maxX, 32 + $BTN)
-    $wantH = $y + 4
+    $spotifyW = Spotify-Width $g
+    Draw-Spotify $g 10 $y ([Math]::Max($maxX - 20, $spotifyW))
+    $wantW = [Math]::Max([Math]::Max($maxX, 32 + $BTN), $spotifyW + 20)
+    $wantH = $y + (Spotify-Height) + 4
     $bx = $form.ClientSize.Width - $BTN
   } else {
     $x = 32
@@ -315,28 +337,31 @@ function Show-Widget {
 function Update-Tooltip {
   $d = $script:data
   $lines = @()
-  foreach ($p in @(@('Claude', $d.claude, $d.tokens.claude, $d.month.claude), @('Codex', $d.codex, $d.tokens.codex, $d.month.codex))) {
-    if ($script:mode -ne 'both' -and $script:mode -ne $p[0].ToLower()) { continue }
-    $u = $p[1]; $t = $p[2]; $m = $p[3]
-    $head = $p[0] + $(if ($u.plan) { " ($($u.plan))" }) + $(if ($u.asOf) { ' — as of ' + [DateTimeOffset]::FromUnixTimeSeconds([long]$u.asOf).LocalDateTime.ToString('ddd h:mm tt', [Globalization.CultureInfo]::InvariantCulture) }) + $(if (Is-Stale $u) { ' — OUT OF DATE (rate-limited, token expired, or offline; retries automatically)' })
+  # Only the products this PC has (lib\products.ps1).
+  foreach ($section in (Get-Sections $d $script:mode)) {
+    $name, $u, $m = $section
+    $t = if ($u) { $d.tokens.($name.ToLower()) }   # today's tokens are all 0 for a product never used here
+    $head = $name + $(if ($u.plan) { " ($($u.plan))" }) + $(if ($u.asOf) { ' — as of ' + [DateTimeOffset]::FromUnixTimeSeconds([long]$u.asOf).LocalDateTime.ToString('ddd h:mm tt', [Globalization.CultureInfo]::InvariantCulture) }) + $(if (Is-Stale $u) { ' — OUT OF DATE (rate-limited, token expired, or offline; retries automatically)' })
     $lines += $head
     if ($u.fiveHour) { $lines += "  Session $($u.fiveHour.pct)% used, $(100 - $u.fiveHour.pct)% left, $(Reset-Text $u.fiveHour.resetsAt $false)" }
     if ($u.weekly)   { $lines += "  Weekly  $($u.weekly.pct)% used, $(100 - $u.weekly.pct)% left, $(Reset-Text $u.weekly.resetsAt $true)" }
     if ($t) { $lines += "  Today $(Short-Num $t.total) tokens ($(Short-Num $t.inOut) in/out)" }
     $monthLine = Month-TooltipLine $m
     if ($monthLine) { $lines += $monthLine }
-
   }
+  if (Nothing-Found $d (Get-Sections $d $script:mode)) { $lines += $nothingText }
+  $spotifyLine = Spotify-TooltipLine
+  if ($spotifyLine) { $lines += $spotifyLine }
   $lines += ''
   $lines += "Updated $($script:updatedAt.ToString('h:mm:ss tt')) · drag to move · ✕ shrinks to the butterfly · right-click → Exit closes"
-  $lines += 'mo = this billing month (pay day in billing.json), ~% estimated as weekly limit × weeks in the month (no official monthly limit)'
+  if (Has-MonthRow (Get-Sections $d $script:mode)) { $lines += 'mo = this billing month (pay day in billing.json), ~% estimated as weekly limit × weeks in the month (no official monthly limit)' }
   $lines += 'Click the butterfly (or right-click) to show Claude / Codex / both · hold it to switch horizontal / vertical / square'
   $tip.SetToolTip($form, ($lines -join "`n"))
   # Tray hover text (Windows cuts it at 63 characters).
   $short = foreach ($p in @(@('Claude', $d.claude), @('Codex', $d.codex))) {
     if ($p[1].fiveHour) { "$($p[0]) $($p[1].fiveHour.pct)%/$($p[1].weekly.pct)%" }
   }
-  $trayText = 'AI Usage: ' + ($short -join ', ')
+  $trayText = 'AI Usage' + $(if ($short) { ': ' + ($short -join ', ') })
   $tray.Text = $trayText.Substring(0, [Math]::Min(63, $trayText.Length))
 }
 

@@ -17,8 +17,10 @@ function Month-Info($m) {
   }
 }
 
-# When the billing month ends (the next pay day), like the other rows' reset time: "↻Tue 22 Sep".
-function Month-Reset($info) { '↻' + $info.end.ToString('ddd d MMM', [Globalization.CultureInfo]::InvariantCulture) }
+# When the billing month ends (the next pay day): "Renews 5 Oct", or "Ends 5 Oct" in red if the plan is set to
+# cancel (billing.json "cancels"). Plan-Label / Plan-Color are in lib\plan-status.ps1.
+function Month-Reset($m, $info) { Plan-Label $m.cancels $info.end }
+function Month-ResetColor($m) { Plan-Color $m.cancels }
 
 function Month-Text($m) {
   if ($null -eq $m.pct) { return '—' }
@@ -30,9 +32,9 @@ function Month-Color($m) {
   return $ink
 }
 
-# "mo ▬▬▬ ~74% ↻Tue 22 Sep" — same columns as Draw-Window; returns the x after it.
+# "mo ▬▬▬ ~74% Renews 5 Oct" — same columns as Draw-Window; returns the x after it.
 function Draw-Month($g, $x, $y, $m) {
-  $g.DrawString('mo', $fSmall, (Brush $muted), $x, (TextY $g $fSmall $y))
+  $g.DrawString('mo', $fSmall, (Brush $labelInk), $x, (TextY $g $fSmall $y))
   $x += (TextW $g '5h' $fSmall)
   $barY = [int]($y + $script:rowH / 2) - 3
   $g.FillRectangle((Brush $track), $x, $barY, 40, 6)
@@ -41,7 +43,7 @@ function Draw-Month($g, $x, $y, $m) {
   $g.DrawString((Month-Text $m), $fText, (Brush (Month-Color $m)), $x, (TextY $g $fText $y))
   $x += (TextW $g '100%?' $fText)
   $info = Month-Info $m
-  if ($info) { $g.DrawString((Month-Reset $info), $fSmall, (Brush $muted), $x, (TextY $g $fSmall $y)) }
+  if ($info) { $g.DrawString((Month-Reset $m $info), $fPlan, (Brush (Month-ResetColor $m)), $x, (TextY $g $fSmall $y)) }
   return $x + (TextW $g '↻Wed 12:59PM' $fSmall) + 8
 }
 
@@ -54,13 +56,13 @@ function Draw-MonthRing($g, $x, $y, $w, $d, $m) {
   }
   Draw-Centered $g (Month-Text $m) $fSmall (Month-Color $m) $x $y $w $d
   $info = Month-Info $m
-  if ($info) { Draw-Centered $g (Month-Reset $info) $fSmall $muted $x ($y + $d + 2) $w 16 }
+  if ($info) { Draw-Centered $g (Month-Reset $m $info) $fPlan (Month-ResetColor $m) $x ($y + $d + 2) $w 16 }
 }
 
-# Tooltip line: "  Month ~74% used (estimate), 22 Aug → 22 Sep, 6 days left, 2.1B tokens".
+# Tooltip line: "  Month ~74% used (estimate), 5 Sep → 5 Oct, 6 days left, 2.1B tokens".
 function Month-TooltipLine($m) {
   $mi = Month-Info $m
   if (-not $mi) { return $null }
   $inv = [Globalization.CultureInfo]::InvariantCulture
-  "  Month ~$($m.pct)% used (estimate), $($mi.start.ToString('d MMM', $inv)) → $($mi.end.ToString('d MMM', $inv)), $($mi.daysLeft) days left, $(Short-Num $m.total) tokens"
+  "  Month ~$($m.pct)% used (estimate), $($mi.start.ToString('d MMM', $inv)) → $($mi.end.ToString('d MMM', $inv)), $($mi.daysLeft) days left, $(Short-Num $m.total) tokens" + ' — ' + (Plan-Label $m.cancels $mi.end)
 }

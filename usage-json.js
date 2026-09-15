@@ -4,6 +4,7 @@
 const { readUsage } = require('./lib/usage');
 const { readTokens } = require('./lib/tokens');
 const { monthPercent } = require('./lib/month');
+const { readSpotify } = require('./lib/spotify');
 
 (async () => {
   const usage = await readUsage();
@@ -17,5 +18,6 @@ const { monthPercent } = require('./lib/month');
     ...usage,
     tokens: { claude: today.claude || null, codex: today.codex || null },
     month: { claude: withPct('claude'), codex: withPct('codex') },
+    spotify: readSpotify(),
   }));
 })();

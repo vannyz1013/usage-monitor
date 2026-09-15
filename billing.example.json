@@ -1,4 +1,5 @@
 {
-  "claude": 1,
-  "codex": 1
+  "claude": { "payDay": 1, "cancels": false },
+  "codex": { "payDay": 1, "cancels": false },
+  "spotify": { "payDay": 1, "cancels": false, "name": "Spotify", "price": "RM 0.00" }
 }
