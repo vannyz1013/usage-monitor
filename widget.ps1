@@ -86,6 +86,8 @@ function Reset-Text($resetsAt, $weekly) {
 }
 
 function Short-Num($n) {
+  if ($n -ge 1e9) { return ('{0:0.#}B' -f ($n / 1e9)) }
+  if ($n -ge 1e8) { return ('{0:0}M' -f ($n / 1e6)) }
   if ($n -ge 1e6) { return ('{0:0.#}M' -f ($n / 1e6)) }
   if ($n -ge 1e3) { return ('{0:0.#}K' -f ($n / 1e3)) }
   return "$n"
@@ -148,6 +150,9 @@ function Draw-Window($g, $x, $y, $label, $win, $weekly, $stale) {
   return $x + (TextW $g $widest $fSmall) + 8
 }
 
+# The billing-month row (mo): Month-*, Draw-Month, Draw-MonthRing.
+. (Join-Path $PSScriptRoot 'lib\month.ps1')
+
 $centre = New-Object Drawing.StringFormat
 $centre.Alignment = 'Center'
 $centre.LineAlignment = 'Center'
@@ -199,17 +204,17 @@ $form.Add_Paint({
 
   $d = $script:data
   $sections = @()
-  if ($script:mode -ne 'codex') { $sections += , @('Claude', $d.claude) }
-  if ($script:mode -ne 'claude') { $sections += , @('Codex', $d.codex) }
+  if ($script:mode -ne 'codex') { $sections += , @('Claude', $d.claude, $d.month.claude) }
+  if ($script:mode -ne 'claude') { $sections += , @('Codex', $d.codex, $d.month.codex) }
   $wantH = $script:barH
 
   if ($script:collapsed) {
     $wantW = 32   # butterfly only
   } elseif ($script:layout -eq 'square') {
-    # Ring gauges: a column per product, a row per window (5h, 7d). The panel is kept square.
+    # Ring gauges: a column per product, a row per window (5h, 7d) plus the billing month. The panel is kept square.
     $labelW = 20; $cellW = 76; $ringD = 44; $cellH = $ringD + 20; $nameH = 18
     $gridW = $labelW + $cellW * $sections.Count
-    $side = [Math]::Max($gridW + 16, $rh + $nameH + 2 * $cellH + 8)
+    $side = [Math]::Max($gridW + 16, $rh + $nameH + 3 * $cellH + 8)
     $x0 = [int](($form.ClientSize.Width - $gridW) / 2)
     for ($i = 0; $i -lt $sections.Count; $i++) {
       Draw-Centered $g $sections[$i][0] $fBold $ink ($x0 + $labelW + $i * $cellW) $rh $cellW $nameH
@@ -223,18 +228,23 @@ $form.Add_Paint({
       }
       $y += $cellH
     }
+    $g.DrawString('mo', $fSmall, (Brush $muted), $x0, (TextY $g $fSmall $y $ringD))
+    for ($i = 0; $i -lt $sections.Count; $i++) {
+      Draw-MonthRing $g ($x0 + $labelW + $i * $cellW) $y $cellW $ringD $sections[$i][2]
+    }
     $wantW = $wantH = $side
     $bx = $form.ClientSize.Width - $BTN
   } elseif ($script:layout -eq 'vertical') {
     # Stacked: butterfly and ⟳ ✕ on top, then per product a name row and its 5h / 7d rows.
     $y = $rh; $maxX = 0
     for ($i = 0; $i -lt $sections.Count; $i++) {
-      $name, $usage = $sections[$i]
+      $name, $usage, $month = $sections[$i]
       if ($i) { $g.FillRectangle((Brush $accent), 10, ($y + 2), ($form.ClientSize.Width - 20), 1); $y += 5 }
       $g.DrawString($name, $fBold, (Brush $ink), 10, (TextY $g $fBold $y 20)); $y += 20
       $stale = Is-Stale $usage
       $maxX = [Math]::Max($maxX, (Draw-Window $g 12 $y '5h' $usage.fiveHour $false $stale)); $y += $rh
       $maxX = [Math]::Max($maxX, (Draw-Window $g 12 $y '7d' $usage.weekly $true $stale)); $y += $rh
+      $maxX = [Math]::Max($maxX, (Draw-Month $g 12 $y $month)); $y += $rh
     }
     $wantW = [Math]::Max($maxX, 32 + $BTN)
     $wantH = $y + 4
@@ -305,17 +315,21 @@ function Show-Widget {
 function Update-Tooltip {
   $d = $script:data
   $lines = @()
-  foreach ($p in @(@('Claude', $d.claude, $d.tokens.claude), @('Codex', $d.codex, $d.tokens.codex))) {
+  foreach ($p in @(@('Claude', $d.claude, $d.tokens.claude, $d.month.claude), @('Codex', $d.codex, $d.tokens.codex, $d.month.codex))) {
     if ($script:mode -ne 'both' -and $script:mode -ne $p[0].ToLower()) { continue }
-    $u = $p[1]; $t = $p[2]
+    $u = $p[1]; $t = $p[2]; $m = $p[3]
     $head = $p[0] + $(if ($u.plan) { " ($($u.plan))" }) + $(if ($u.asOf) { ' — as of ' + [DateTimeOffset]::FromUnixTimeSeconds([long]$u.asOf).LocalDateTime.ToString('ddd h:mm tt', [Globalization.CultureInfo]::InvariantCulture) }) + $(if (Is-Stale $u) { ' — OUT OF DATE (rate-limited, token expired, or offline; retries automatically)' })
     $lines += $head
     if ($u.fiveHour) { $lines += "  Session $($u.fiveHour.pct)% used, $(100 - $u.fiveHour.pct)% left, $(Reset-Text $u.fiveHour.resetsAt $false)" }
     if ($u.weekly)   { $lines += "  Weekly  $($u.weekly.pct)% used, $(100 - $u.weekly.pct)% left, $(Reset-Text $u.weekly.resetsAt $true)" }
     if ($t) { $lines += "  Today $(Short-Num $t.total) tokens ($(Short-Num $t.inOut) in/out)" }
+    $monthLine = Month-TooltipLine $m
+    if ($monthLine) { $lines += $monthLine }
+
   }
   $lines += ''
   $lines += "Updated $($script:updatedAt.ToString('h:mm:ss tt')) · drag to move · ✕ shrinks to the butterfly · right-click → Exit closes"
+  $lines += 'mo = this billing month (pay day in billing.json), ~% estimated as weekly limit × weeks in the month (no official monthly limit)'
   $lines += 'Click the butterfly (or right-click) to show Claude / Codex / both · hold it to switch horizontal / vertical / square'
   $tip.SetToolTip($form, ($lines -join "`n"))
   # Tray hover text (Windows cuts it at 63 characters).
