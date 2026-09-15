@@ -9,6 +9,9 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $wake = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetShow')
 $single = New-Object Threading.Mutex($false, 'Local\AIUsageWidget')
 try { if (-not $single.WaitOne(0)) { [void]$wake.Set(); exit } } catch [Threading.AbandonedMutexException] {}
+# The command center (Desktop\ai\command-center) hides it for a clean screen and reads whether it is on screen.
+$hideSignal = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetHide')
+$visibleFlag = New-Object Threading.EventWaitHandle($false, 'ManualReset', 'Local\AIUsageWidgetVisible')
 
 $script = Join-Path $PSScriptRoot 'usage-json.js'
 $posFile = Join-Path $env:USERPROFILE '.claude\usage-widget-pos.txt'
@@ -292,6 +295,7 @@ function Ensure-OnScreen {
 # Tray icon click, "Show widget", or launching it again: open it fully and bring it forward.
 function Show-Widget {
   $form.Show()
+  [void]$visibleFlag.Set()
   Ensure-OnScreen
   $script:collapsed = $false
   Pin-OnTop
@@ -360,6 +364,7 @@ $tick.Interval = 1000
 $script:ticks = 0
 $tick.Add_Tick({
   if ($wake.WaitOne(0)) { Show-Widget }
+  if ($hideSignal.WaitOne(0)) { $form.Hide(); [void]$visibleFlag.Reset() }
   # Every 30 s: Windows can drop it out of the topmost band (sleep, full-screen apps, Explorer restart)
   # or a display change can leave it off screen, and with no taskbar button it then looks gone.
   if ((++$script:ticks % 30) -eq 0 -and -not $menu.Visible) { Pin-OnTop; Ensure-OnScreen }
@@ -496,7 +501,7 @@ $tray.Text = 'AI Usage'
 $tray.ContextMenuStrip = $menu
 $tray.Add_MouseClick({ if ($_.Button -eq 'Left') { Show-Widget } })
 $tray.Visible = $true
-$form.Add_FormClosed({ $tray.Visible = $false; $tray.Dispose() })
+$form.Add_FormClosed({ $tray.Visible = $false; $tray.Dispose(); [void]$visibleFlag.Reset() })
 
 # No full Keep-OnScreen here: the window still has its placeholder width, so that would shift it.
 # The first paint fits it and keeps it on screen, but Windows never paints a window that is entirely
@@ -506,6 +511,7 @@ $form.Add_Shown({
   $form.Location = New-Object Drawing.Point(
     [Math]::Min([Math]::Max($form.Left, $area.Left), $area.Right - 32),
     [Math]::Min([Math]::Max($form.Top, $area.Top), $area.Bottom - 32))
+  [void]$visibleFlag.Set()
   Start-Poll
 })
 [Windows.Forms.Application]::Run($form)
