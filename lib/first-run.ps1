@@ -1,6 +1,6 @@
 ﻿# The one-time "how to use it" note for widget.ps1 (dot-sourced; uses its $form and $tip).
-# Everything the widget can do is behind a click, a hold or a right-click, and none of that is written on it.
-# So the very first time it runs on this PC it says so once, under the bar, for 12 seconds. After that the
+# The readout is click-through; controls live on the small ≡ handle and in the pet/tray menus. The first time
+# it runs on this PC it explains that once, under the widget, for 12 seconds. After that the
 # marker file keeps it quiet for good; delete the file to see it again.
 
 $hintFile = Join-Path $env:USERPROFILE '.claude\usage-widget-hint.txt'
@@ -8,11 +8,11 @@ $hintFile = Join-Path $env:USERPROFILE '.claude\usage-widget-hint.txt'
 $hintText = @'
 Welcome — your Claude, Codex and Spotify plan limits.
 
-  Click the butterfly     Claude / Codex / both
-  Hold the butterfly      change the shape: bar, pole, tall, square
-  Drag anywhere           move it
-  Right-click             details, light/dark, see-through, exit
-  ⟳ refresh   ✕ put it away (the tray butterfly brings it back)
+  Click ≡                   plans, details, layouts and settings
+  Drag ≡                    move the widget
+  Pet butterfly             show usage; click again to hide it
+  Command Center            Usage settings
+  Usage area                click-through to the app underneath
 
 This note is only shown once.
 '@

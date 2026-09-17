@@ -1,16 +1,19 @@
-﻿# One-line always-on-top usage bar for Claude + Codex, light blue theme with a butterfly icon.
-# Hover for reset times and today's tokens. Drag to move. ⟳ refresh, ✕ puts it away (the desktop pet
+﻿# Always-on-top usage dashboard and compact layouts for Claude + Codex.
+# Open Details for reset times and today's tokens. Drag to move. ⟳ refresh, ✕ puts it away (the desktop pet
 # wears the butterfly as a hair clip; tapping that, or the tray icon, brings it back). Right-click → Exit closes it.
 # Polls usage-json.js in the background every 60 s so the UI never freezes.
+param([switch]$Settings)
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$settingsSignal = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetSettings')
 
 # One widget at a time: launching it again (Start menu, Startup) while it runs tells the running one
 # to come back (open, on top, on screen) instead of starting a second copy.
 $wake = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetShow')
 $single = New-Object Threading.Mutex($false, 'Local\AIUsageWidget')
-try { if (-not $single.WaitOne(0)) { [void]$wake.Set(); exit } } catch [Threading.AbandonedMutexException] {}
+try { if (-not $single.WaitOne(0)) { if ($Settings) { [void]$settingsSignal.Set() } else { [void]$wake.Set() }; exit } } catch [Threading.AbandonedMutexException] {}
 # The command center (Desktop\ai\command-center) hides it for a clean screen and reads whether it is on screen.
 $hideSignal = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetHide')
+$toggleSignal = New-Object Threading.EventWaitHandle($false, 'AutoReset', 'Local\AIUsageWidgetToggle')
 $visibleFlag = New-Object Threading.EventWaitHandle($false, 'ManualReset', 'Local\AIUsageWidgetVisible')
 
 $script = Join-Path $PSScriptRoot 'usage-json.js'
@@ -18,10 +21,9 @@ $posFile = Join-Path $env:USERPROFILE '.claude\usage-widget-pos.txt'
 $modeFile = Join-Path $env:USERPROFILE '.claude\usage-widget-mode.txt'
 $layoutFile = Join-Path $env:USERPROFILE '.claude\usage-widget-layout.txt'
 
-# Holding the butterfly cycles the shape: one-line bar, the same bar stood on end like a stick (pole),
-# stacked (vertical) panel, square. Remembered too.
-$layouts = 'horizontal', 'pole', 'vertical', 'square'
-$script:layout = 'horizontal'
+# The shape is selected from the ≡ menu or Usage settings and remembered.
+$layouts = 'mini', 'summary', 'dashboard', 'horizontal', 'pole', 'vertical', 'square'
+$script:layout = 'mini'
 if (Test-Path $layoutFile) {
   $saved = (Get-Content $layoutFile -Raw).Trim()
   if ($saved -in $layouts) { $script:layout = $saved }
@@ -188,6 +190,10 @@ function Draw-Window($g, $x, $y, $label, $win, $weekly, $stale, $showReset = $tr
 . (Join-Path $PSScriptRoot 'lib\alerts.ps1')
 # The pole (stick) layout's rows: Pole-Width, Draw-PoleRow, Draw-PoleMonth.
 . (Join-Path $PSScriptRoot 'lib\pole.ps1')
+. (Join-Path $PSScriptRoot 'lib\dashboard.ps1')
+. (Join-Path $PSScriptRoot 'lib\summary.ps1')
+. (Join-Path $PSScriptRoot 'lib\mini-controls.ps1')
+. (Join-Path $PSScriptRoot 'lib\settings.ps1')
 
 $centre = New-Object Drawing.StringFormat
 $centre.Alignment = 'Center'
@@ -252,13 +258,44 @@ $form.Add_Paint({
   $rh = $script:rowH = $script:barH - 4
   # Blue trim along the bottom.
   $g.FillRectangle((Brush $accent), 0, ($form.ClientSize.Height - 4), $form.ClientSize.Width, 4)
-  Draw-Butterfly $g 16 ([int]($rh / 2) + 1)
+  # The body never receives mouse input. The separate ≡ handle is the only control.
 
   $d = $script:data
   $sections = Get-Sections $d $script:mode
   $wantH = $script:barH
 
-  if (Nothing-Found $d $sections) {
+  foreach ($control in $script:dashboardControls) { $control.Visible = $false }
+  if ($script:layout -eq 'mini') {
+    $y = $rh; $maxX = 260
+    $heading = 'Usage: % used | click-through'
+    $g.DrawString($heading, $fSmall, (Brush $labelInk), 34, (TextY $g $fSmall))
+    foreach ($section in $sections) {
+      $name, $usage, $month = $section
+      $g.DrawString($name, $fName, (Brush $ink), 10, (TextY $g $fName $y))
+      $x = 72
+      $stale = Is-Stale $usage
+      $x = Draw-Window $g $x $y '5h' $usage.fiveHour $false $stale $false
+      $x = Draw-Window $g $x $y '7d' $usage.weekly $true $stale $false
+      $maxX = [Math]::Max($maxX, $x)
+      $y += $rh
+    }
+    if (-not $sections.Count) {
+      $message = if ($d.spotify) { 'Spotify: ' + (Plan-Label $d.spotify.cancels (Spotify-Date)) } else { 'No usage yet; open details from the tray' }
+      $g.DrawString($message, $fSmall, (Brush $labelInk), 10, (TextY $g $fSmall $y))
+      $maxX = [Math]::Max($maxX, (TextW $g $message $fSmall) + 20)
+      $y += $rh
+    }
+    $wantW = $maxX + 4; $wantH = $y + 6
+    $bx = $wantW - $BTN
+  } elseif ($script:layout -eq 'summary') {
+    $size = Draw-Summary $g $sections
+    $wantW = $size.Width; $wantH = $size.Height
+    $bx = $wantW - $BTN
+  } elseif ($script:layout -eq 'dashboard') {
+    $size = Draw-Dashboard $g $sections
+    $wantW = $size.Width; $wantH = $size.Height
+    $bx = $wantW - $BTN
+  } elseif (Nothing-Found $d $sections) {
     $wantW = 32 + (Draw-NothingFound $g 32 0 $rh) + 8 + $BTN
     $bx = $form.ClientSize.Width - $BTN
   } elseif ($script:layout -eq 'square') {
@@ -342,8 +379,7 @@ $form.Add_Paint({
     $bx = $x
   }
   if ($null -eq $by) { $by = 0 }
-  Draw-Buttons $g $bx $by
-  $script:btnAt = New-Object Drawing.Rectangle($bx, $by, $BTN, $rh)
+  $script:btnAt = $null
 
   # Fit the window to its content (one resize, then it's stable).
   # Grow leftwards so ⟳ ✕ stay put, and never past the screen edge.
@@ -363,6 +399,7 @@ $form.Add_Paint({
   Draw-Edge $g
   $script:anchorBottom = $null
   $script:W = $form.ClientSize.Width
+  Sync-MiniHandle
 })
 
 function Keep-OnScreen($right) {
@@ -397,13 +434,30 @@ function Show-Widget {
 # ✕ puts it away completely. It used to shrink to a butterfly, but the butterfly now belongs to the desktop
 # pet, which wears it as a hair clip - tapping that clip (or the tray icon) is what brings the widget back.
 function Hide-Widget {
+  $menu.Close()
   $form.Hide()
   [void]$visibleFlag.Reset()
 }
 
-# Asked for from the menu: the details panel, just under the widget, until it is clicked away or 30 s pass.
+# A scrollable, selectable details window opened from the dashboard or menu.
 function Show-Details {
-  if ($script:tipText) { $tip.Show($script:tipText, $form, 8, ($form.Height + 4), 30000) }
+  if ($script:data) { Update-Tooltip }
+  if (-not $script:detailsForm -or $script:detailsForm.IsDisposed) {
+    $script:detailsForm = New-Object Windows.Forms.Form
+    $script:detailsForm.Text = 'Usage details'
+    $script:detailsForm.Size = New-Object Drawing.Size(620, 480)
+    $script:detailsForm.StartPosition = 'CenterScreen'
+    $script:detailsText = New-Object Windows.Forms.TextBox
+    $script:detailsText.Multiline = $true
+    $script:detailsText.ReadOnly = $true
+    $script:detailsText.ScrollBars = 'Vertical'
+    $script:detailsText.Dock = 'Fill'
+    $script:detailsText.Font = $fText
+    $script:detailsForm.Controls.Add($script:detailsText)
+  }
+  $script:detailsText.BackColor = $bg; $script:detailsText.ForeColor = $ink
+  $script:detailsText.Text = if ($script:tipText) { $script:tipText.Replace("`n", "`r`n") } else { 'Waiting for usage data. The widget retries automatically.' }
+  $script:detailsForm.Show(); $script:detailsForm.Activate()
 }
 
 function Update-Tooltip {
@@ -416,11 +470,11 @@ function Update-Tooltip {
     $head = $name + $(if ($u.plan) { " ($($u.plan))" }) + $(if ($u.asOf) { ' — as of ' + [DateTimeOffset]::FromUnixTimeSeconds([long]$u.asOf).LocalDateTime.ToString('ddd h:mm tt', [Globalization.CultureInfo]::InvariantCulture) }) + $(if (Is-Stale $u) { ' — OUT OF DATE (rate-limited, token expired, or offline; retries automatically)' })
     $lines += $head
     if ($u.fiveHour) {
-      $lines += "  Session $($u.fiveHour.pct)% used, $(100 - $u.fiveHour.pct)% left, $(Reset-Text $u.fiveHour.resetsAt $false)"
+      $lines += "  Session $($u.fiveHour.pct)% used, $(Reset-Text $u.fiveHour.resetsAt $false)"
       $pace = Pace-Line $u.fiveHour 'fiveHour'; if ($pace) { $lines += $pace }
     }
     if ($u.weekly) {
-      $lines += "  Weekly  $($u.weekly.pct)% used, $(100 - $u.weekly.pct)% left, $(Reset-Text $u.weekly.resetsAt $true)"
+      $lines += "  Weekly  $($u.weekly.pct)% used, $(Reset-Text $u.weekly.resetsAt $true)"
       $pace = Pace-Line $u.weekly 'weekly'; if ($pace) { $lines += $pace }
     }
     if ($t) { $lines += "  Today $(Short-Num $t.total) tokens ($(Short-Num $t.inOut) in/out)" }
@@ -458,24 +512,29 @@ function Start-Poll($fresh = $false) {
   try {
     $script:proc = [Diagnostics.Process]::Start($psi)
     $script:out = $script:proc.StandardOutput.ReadToEndAsync()
-  } catch {}
+  } catch { $script:pollError = $true; $form.Invalidate() }
 }
 
 $check = New-Object Windows.Forms.Timer
 $check.Interval = 250
 $check.Add_Tick({
+  if ($settingsSignal.WaitOne(0)) { Show-UsageSettings }
+  if ($toggleSignal.WaitOne(0)) {
+    if ($form.Visible) { Hide-Widget } else { Show-Widget }
+  }
   if (-not $script:out -or -not $script:out.IsCompleted) { return }
   try {
     $json = $script:out.Result
     if ($json) {
       $script:data = $json | ConvertFrom-Json
+      $script:pollError = $false
       $script:updatedAt = Get-Date
       Update-Tooltip
       Check-Alerts
       $form.Invalidate()
       First-Run-Hint
-    }
-  } catch {}
+    } else { $script:pollError = $true }
+  } catch { $script:pollError = $true }
   $script:out = $null
 })
 $check.Start()
@@ -508,13 +567,12 @@ function Set-Layout($name) {
   $script:layout = $name
   foreach ($k in $layoutItems.Keys) { $layoutItems[$k].Checked = ($k -eq $name) }
   try { $name | Set-Content $layoutFile } catch {}
-  Apply-SeeThrough   # ghost is for the one-line bar only, so a panel gets its background back
+  Apply-SeeThrough   # every shape remains a click-through overlay
   $script:anchorBottom = $form.Bottom
   $form.Invalidate()   # Paint refits both width and height
 }
 
-# Hit areas. The butterfly is always the top-left of the first row; ⟳ ✕ move around between layouts (bottom of
-# the pole, top-right of the panels), so Paint records where it put them in $script:btnAt.
+# Legacy hit areas are kept for compatibility with the compact drawing helpers; the main body is click-through.
 function On-Butterfly($e) { $e.X -le 30 -and $e.Y -le $script:rowH }
 function On-Buttons($e) { $null -ne $script:btnAt -and $script:btnAt.Contains($e.Location) }
 function On-Close($e) { (On-Buttons $e) -and $e.X -ge ($script:btnAt.X + 24) }
@@ -581,6 +639,11 @@ $menu = New-Object Windows.Forms.ContextMenuStrip
 # What you reach for most is on top; every setting is one of three submenus, so the list stays short
 # enough to read at a glance. The same menu serves the widget and the tray icon.
 $menu.ShowImageMargin = $false
+[void]$menu.Items.Add('Usage settings...', $null, { Show-UsageSettings })
+[void]$menu.Items.Add('Show mini overlay', $null, { Set-Layout 'mini'; Show-Widget })
+[void]$menu.Items.Add('Show full dashboard (click-through)', $null, { Set-Layout 'dashboard'; Show-Widget })
+[void]$menu.Items.Add('Hide widget', $null, { Hide-Widget })
+[void]$menu.Items.Add('-')
 [void]$menu.Items.Add('Details', $null, { Show-Details })
 [void]$menu.Items.Add('Refresh now', $null, { Start-Poll $true })
 [void]$menu.Items.Add('Show widget', $null, { Show-Widget })
@@ -602,12 +665,15 @@ function Set-Mode($mode) {
 }
 foreach ($k in $modeItems.Keys) { $modeItems[$k].Checked = ($k -eq $script:mode) }
 
-$shapeMenu = $menu.Items.Add('Shape')
+$shapeMenu = $menu.Items.Add('Shape (all click-through)')
 $layoutItems = @{
-  horizontal = $shapeMenu.DropDownItems.Add('Bar (one line)', $null, { Set-Layout 'horizontal' })
-  pole       = $shapeMenu.DropDownItems.Add('Pole (the bar stood on end)', $null, { Set-Layout 'pole' })
+  mini       = $shapeMenu.DropDownItems.Add('Mini', $null, { Set-Layout 'mini' })
+  summary    = $shapeMenu.DropDownItems.Add('Mini + dates', $null, { Set-Layout 'summary' })
+  dashboard  = $shapeMenu.DropDownItems.Add('Dashboard', $null, { Set-Layout 'dashboard' })
+  horizontal = $shapeMenu.DropDownItems.Add('Bar', $null, { Set-Layout 'horizontal' })
+  pole       = $shapeMenu.DropDownItems.Add('Pole', $null, { Set-Layout 'pole' })
   vertical   = $shapeMenu.DropDownItems.Add('Tall panel', $null, { Set-Layout 'vertical' })
-  square     = $shapeMenu.DropDownItems.Add('Square (ring gauges)', $null, { Set-Layout 'square' })
+  square     = $shapeMenu.DropDownItems.Add('Square gauges', $null, { Set-Layout 'square' })
 }
 foreach ($k in $layoutItems.Keys) { $layoutItems[$k].Checked = ($k -eq $script:layout) }
 
@@ -623,7 +689,6 @@ foreach ($k in $themeItems.Keys) { $themeItems[$k].Checked = ($k -eq $script:the
 $seeItems = @{
   solid = $lookMenu.DropDownItems.Add('Solid', $null, { Set-SeeThrough 'solid' })
   soft  = $lookMenu.DropDownItems.Add('Faded', $null, { Set-SeeThrough 'soft' })
-  ghost = $lookMenu.DropDownItems.Add('See through it (bar only; clicks go past it)', $null, { Set-SeeThrough 'ghost' })
 }
 foreach ($k in $seeItems.Keys) { $seeItems[$k].Checked = ($k -eq $script:seeThrough) }
 [void]$lookMenu.DropDownItems.Add('-')
@@ -636,6 +701,13 @@ $warnItem.Checked = $script:warnOn
 [void]$menu.Items.Add('Exit', $null, { $form.Close() })
 $form.ContextMenuStrip = $menu
 Paint-Theme   # the menu exists now, so it can be coloured too
+Initialize-DashboardControls
+Initialize-MiniHandle
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+  if ($_.KeyCode -eq 'F5') { Start-Poll $true; $_.Handled = $true }
+  if ($_.KeyCode -eq 'Escape') { Hide-Widget; $_.Handled = $true }
+})
 
 # Tray icon (notification area), so the widget can always be found even when shrunk or covered.
 # Left-click brings it back; right-click gives the same menu as the widget.
@@ -651,7 +723,7 @@ $tray.Text = 'AI Usage'
 $tray.ContextMenuStrip = $menu
 $tray.Add_MouseClick({ if ($_.Button -eq 'Left') { Show-Widget } })
 $tray.Visible = $true
-$form.Add_FormClosed({ $tray.Visible = $false; $tray.Dispose(); [void]$visibleFlag.Reset() })
+$form.Add_FormClosed({ if ($script:detailsForm) { $script:detailsForm.Dispose() }; $tray.Visible = $false; $tray.Dispose(); [void]$visibleFlag.Reset() })
 
 # No full Keep-OnScreen here: the window still has its placeholder width, so that would shift it.
 # The first paint fits it and keeps it on screen, but Windows never paints a window that is entirely
@@ -663,5 +735,6 @@ $form.Add_Shown({
     [Math]::Min([Math]::Max($form.Top, $area.Top), $area.Bottom - 32))
   [void]$visibleFlag.Set()
   Start-Poll
+  if ($Settings) { Show-UsageSettings }
 })
 [Windows.Forms.Application]::Run($form)

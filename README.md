@@ -3,6 +3,8 @@
 A small always-on-top Windows widget for your AI plan limits, and when your subscriptions renew.
 
 ## What it shows
+All percentages show **usage consumed**, not the percentage remaining.
+
 | Row | Meaning |
 |---|---|
 | **5h** | Claude / Codex session limit used, and when it resets |
@@ -40,34 +42,38 @@ Needs Windows, Node.js and [ccusage](https://github.com/ryoppippi/ccusage) (for 
 ```
 
 ## Controls
-- **Move it:** drag it by anything except ⟳ and ✕ - the butterfly included.
-- **Buttons:** ⟳ refreshes; ✕ puts it away. The desktop pet wears the butterfly as a hair clip - tap that,
-  or the tray icon, to bring the widget back.
-- **Choose what to show:** click the butterfly for Claude / Codex / both; hold it to switch between bar, pole,
-  tall panel and square. Both are also in right-click → Show and → Shape.
+- **Command Center:** click **Usage settings** (or type `usage-settings`) to choose plans, layout, theme and background. Click **Apply** to save.
+- **From your pet:** tap its butterfly clip to show usage; tap again to hide it. This keeps your selected layout. Use the **≡** button on any shape or the tray menu for product and layout controls.
+- **On every shape:** the visible **≡** button opens the same menu; drag that button to move the widget. Only this small button catches clicks. The usage readout stays click-through.
+- **All shapes:** Mini, Mini + dates, Dashboard, Bar, Pole, Tall panel and Square are click-through overlays. The usage stays visible while clicks go to the app underneath. Only the small **≡** menu button is interactive; drag it to move the current shape.
+- **Dashboard:** an optional expanded view. Session and weekly cards show usage and reset countdowns. Choose **Show full dashboard** or select **Dashboard** under **Shape (all click-through)**. Its body remains read-only and click-through.
+- **Move it:** drag the **≡** button in any shape. The usage body remains click-through while you move it.
+- **Menu:** **Details**, **Refresh now**, **Hide widget**, **Usage settings**, **Show**, **Shape** and **Look** are available from the **≡** button or tray icon.
+- **Choose what to show:** use the **Show** menu for Claude / Codex / both, and **Shape** for Mini, Mini + dates, Dashboard, Bar, Pole,
+  Tall panel or Square. Every shape is click-through.
 - **Details** (reset times, how long until each reset, today's tokens, what `mo` means): right-click → Details.
-  It is not on hover.
+  Opens a scrollable window you can keep open and copy from.
 - **Light or dark:** right-click → Look. "Follow Windows" is the default and changes with your Windows app mode.
 - **Too wide?** right-click → Look → Compact bar leaves the `mo` row off the one-line bar (about 1170 px → 790 px).
   The other shapes keep it.
 - **First run:** the very first time it starts on a PC it shows a short note about these controls, once.
 - **Warnings:** a tray notification the first time each limit passes 80%, and again at 95%. Right-click →
   Warn me near the limit turns it off.
-- **See through it:** right-click → See through it / Faded / Solid. Solid is the default. See-through applies to
-  the **one-line bar only**: it leaves just the numbers floating and lets clicks go straight past to the taskbar
-  underneath. The pole, vertical and square panels stay solid - without a panel their rings and labels are not
-  readable. Faded (78%) works on all four.
+- **Background:** choose Solid or Faded. Every shape is click-through by default, except its small menu button. The usage remains readable while the app underneath stays clickable.
 - **Exit:** right-click → Exit.
 
 ## Layouts
 | | Shape |
 |---|---|
+| Mini | Small header and one usage row per provider; full details available on right-click |
+| Mini + dates | The same compact rows, with each provider's 5h / 7d reset dates and its Renews / Ends date; Spotify is shown underneath when configured |
+| Dashboard | Readable usage cards, reset countdowns, renewal dates, product filters and visible controls |
 | Horizontal | One line: every product's 5h, 7d and mo rows, then Spotify. No ↻ reset clocks - they made it span the screen. Look → Compact bar drops the mo row too |
 | Pole | A narrow stick, everything stacked down it, text upright |
 | Vertical | A stacked panel, one row per window with its reset time |
 | Square | A ring gauge per product per window |
 
-All four show the same things. The horizontal bar and the pole leave out the ↻ reset clocks, which are what
+All layouts use the same usage data. The horizontal bar and the pole leave out the ↻ reset clocks, which are what
 makes a row wide; they are in right-click → Details either way.
 
 ## About the month %
@@ -83,6 +89,7 @@ hold - no extra account, no API key, no paid service. The widget never refreshes
 ## Files
 | File | Job |
 |---|---|
+| `lib/dashboard.ps1` | Usage cards, product filters and accessible action buttons |
 | `widget.ps1` | The window, layouts, mouse and polling |
 | `usage-json.js` | Collects everything below into one JSON for the widget |
 | `lib/usage.js`, `lib/live.js`, `lib/claude.js`, `lib/codex.js`, `lib/window.js` | 5h / 7d limits (live API, with local fallbacks) |
