@@ -40,15 +40,45 @@ Needs Windows, Node.js and [ccusage](https://github.com/ryoppippi/ccusage) (for 
 ```
 
 ## Controls
-- **Move it:** drag.
-- **Buttons:** ⟳ refreshes; ✕ shrinks it to the butterfly.
-- **Choose what to show:** click the butterfly for Claude / Codex / both; hold it to switch between horizontal, vertical and square.
+- **Move it:** drag it by anything except ⟳ and ✕ - the butterfly included.
+- **Buttons:** ⟳ refreshes; ✕ puts it away. The desktop pet wears the butterfly as a hair clip - tap that,
+  or the tray icon, to bring the widget back.
+- **Choose what to show:** click the butterfly for Claude / Codex / both; hold it to switch between bar, pole,
+  tall panel and square. Both are also in right-click → Show and → Shape.
+- **Details** (reset times, how long until each reset, today's tokens, what `mo` means): right-click → Details.
+  It is not on hover.
+- **Light or dark:** right-click → Look. "Follow Windows" is the default and changes with your Windows app mode.
+- **Too wide?** right-click → Look → Compact bar leaves the `mo` row off the one-line bar (about 1170 px → 790 px).
+  The other shapes keep it.
+- **First run:** the very first time it starts on a PC it shows a short note about these controls, once.
+- **Warnings:** a tray notification the first time each limit passes 80%, and again at 95%. Right-click →
+  Warn me near the limit turns it off.
+- **See through it:** right-click → See through it / Faded / Solid. Solid is the default. See-through applies to
+  the **one-line bar only**: it leaves just the numbers floating and lets clicks go straight past to the taskbar
+  underneath. The pole, vertical and square panels stay solid - without a panel their rings and labels are not
+  readable. Faded (78%) works on all four.
 - **Exit:** right-click → Exit.
+
+## Layouts
+| | Shape |
+|---|---|
+| Horizontal | One line: every product's 5h, 7d and mo rows, then Spotify. No ↻ reset clocks - they made it span the screen. Look → Compact bar drops the mo row too |
+| Pole | A narrow stick, everything stacked down it, text upright |
+| Vertical | A stacked panel, one row per window with its reset time |
+| Square | A ring gauge per product per window |
+
+All four show the same things. The horizontal bar and the pole leave out the ↻ reset clocks, which are what
+makes a row wide; they are in right-click → Details either way.
 
 ## About the month %
 Claude and Codex have no monthly limit.
 - **The estimate:** the month % is measured against your weekly limit × the weeks in your billing month. It uses this week's tokens (from ccusage) and weekly % to work out how many tokens 1% is.
 - **Why "~":** it's an estimate, so it always has a "~" in front.
+
+## What it costs to run
+Nothing. `ccusage` runs `--offline` over logs already on this PC, and the 5h / 7d
+percentages come from the same endpoints Claude Code and Codex already call with the tokens they already
+hold - no extra account, no API key, no paid service. The widget never refreshes those tokens itself.
 
 ## Files
 | File | Job |
@@ -62,4 +92,15 @@ Claude and Codex have no monthly limit.
 | `lib/spotify.js`, `lib/spotify.ps1` | Spotify's Renews / Ends line |
 | `lib/plan-status.ps1` | The green Renews / red Ends label |
 | `lib/products.ps1` | Which products to show |
+| `lib/pole.ps1` | The pole (stick) layout's rows |
+| `lib/see-through.ps1` | See-through / click-through levels |
+| `lib/theme.ps1` | Light / dark palettes, and following Windows |
+| `lib/rounded.ps1` | The window's rounded corners and its edge |
+| `lib/hover.ps1` | The chip under the hovered button, and the pointer shapes |
+| `lib/compact.ps1` | Leaving the month row off the one-line bar |
+| `lib/countdown.ps1` | "in 2h 14m" next to a reset time in Details |
+| `lib/first-run.ps1` | The one-time note about the controls |
+| `lib/alerts.ps1` | The tray warning at 80% and 95% |
+| `lib/pace.ps1` | "At this rate" in Details: whether a window runs out before it resets |
+| `lib/token-cache.js` | The 5-minute cache for the ccusage run |
 | `statusline.js`, `lib/format.js` | The same usage in the Claude Code status line |

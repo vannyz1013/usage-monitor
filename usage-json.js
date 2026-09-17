@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Prints both usages as JSON; the desktop widget polls this.
+// `node usage-json.js fresh` also skips the token cache (lib/token-cache.js): that is the ⟳ button.
 // Every usage carries asOf (unix s): the widget greys out anything too old.
 const { readUsage } = require('./lib/usage');
 const { readTokens } = require('./lib/tokens');
@@ -8,7 +9,7 @@ const { readSpotify } = require('./lib/spotify');
 
 (async () => {
   const usage = await readUsage();
-  const { today = {}, month = {}, days = {} } = readTokens() || {};
+  const { today = {}, month = {}, days = {} } = readTokens(new Date(), process.argv.includes('fresh')) || {};
   const withPct = (agent) => {
     const m = month[agent];
     if (!m) return null;

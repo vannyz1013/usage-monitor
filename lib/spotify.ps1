@@ -27,6 +27,20 @@ function Draw-Spotify($g, $x, $y, $w) {
   $g.DrawString($label, $fPlan, (Brush (Plan-Color $s.cancels)), ($x + $w - (TextW $g $label $fPlan)), (TextY $g $fPlan $y $spotifyRowH))
 }
 
+# On the one-line bar it is the last thing on the row, after a separator, like another product:
+# "| Spotify  Renews 17 Sep". Returns the x after it.
+function Draw-SpotifyInline($g, $x) {
+  $s = $script:data.spotify
+  if (-not $s) { return $x }
+  $g.FillRectangle((Brush $accent), ($x - 3), 7, 1, ($script:rowH - 14))
+  $x += 6
+  $g.DrawString($s.name, $fName, (Brush $ink), $x, (TextY $g $fName))
+  $x += (TextW $g $s.name $fName) + 8
+  $label = Plan-Label $s.cancels (Spotify-Date)
+  $g.DrawString($label, $fPlan, (Brush (Plan-Color $s.cancels)), $x, (TextY $g $fPlan))
+  return $x + (TextW $g $label $fPlan) + 8
+}
+
 # Tooltip line: "Spotify: Renews 10 Oct ($11.99)".
 function Spotify-TooltipLine {
   $s = $script:data.spotify

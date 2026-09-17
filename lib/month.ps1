@@ -35,7 +35,7 @@ function Month-Color($m) {
 # "mo ▬▬▬ ~74% Renews 5 Oct" — same columns as Draw-Window; returns the x after it.
 function Draw-Month($g, $x, $y, $m) {
   $g.DrawString('mo', $fSmall, (Brush $labelInk), $x, (TextY $g $fSmall $y))
-  $x += (TextW $g '5h' $fSmall)
+  $x += (Label-Slot $g)
   $barY = [int]($y + $script:rowH / 2) - 3
   $g.FillRectangle((Brush $track), $x, $barY, 40, 6)
   if ($null -ne $m.pct) { $g.FillRectangle((Brush (Level-Color $m.pct)), $x, $barY, [int](40 * [Math]::Min(100, $m.pct) / 100), 6) }
